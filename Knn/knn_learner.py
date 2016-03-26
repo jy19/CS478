@@ -6,6 +6,7 @@ import time
 import sys
 import heapq
 from collections import Counter
+import numpy as np
 
 class InstanceBasedLearner(SupervisedLearner):
     def __init__(self, k, distance_weighting, regression):
@@ -15,16 +16,34 @@ class InstanceBasedLearner(SupervisedLearner):
         self.features = None
         self.labels = None
 
+    def get_nearest_neighbors_np(self, test_instance):
+        # calculate distances faster bc python for loops are slow and np uses C loops
+        test_instance_np = np.asarray(test_instance)
+        train_instances = np.asarray(self.features.data)
+        distances = np.sum((train_instances - test_instance_np)**2, axis=1)
+        # print('distances:', distances)
+
+        # get k smallest elements
+        dist_indices = np.argpartition(distances, self.k)[:self.k]
+        neighbors = []
+        # print('neighbors:')
+        for index in dist_indices:
+            # print('curr neighbor:', self.features.row(index))
+            curr_tup = (distances[index], self.labels.row(index)[0])
+            neighbors.append(curr_tup)
+
+        return neighbors
+
     def get_nearest_neighbors(self, test_instance):
         k = self.k
         # distances = [(0, None)]*k
         distances = []
         num_training = self.features.rows
         num_features = self.features.cols
-        print('test instance:', test_instance)
+        # print('test instance:', test_instance)
         for x in range(num_training):
             curr_distance = calc_distance(num_features, test_instance, self.features.row(x))
-            print('train instance:', self.features.row(x))
+            # print('train instance:', self.features.row(x))
             # print('curr distance: ', curr_distance)
             if self.distance_weighting:
                 # curr_distance = 1 / (curr_distance * curr_distance)
@@ -44,13 +63,13 @@ class InstanceBasedLearner(SupervisedLearner):
 
         return distances
 
-    def knn(self, test_instances, labels):
-        # print('knn, test instances:', test_instances)
-        num_tests = test_instances.rows
-        for x in xrange(num_tests):
-            neighbors = self.get_nearest_neighbors(test_instances.row(x))
-            curr_class = determine_class(neighbors)
-            labels.append(curr_class)
+    # def knn(self, test_instances, labels):
+    #     # print('knn, test instances:', test_instances)
+    #     num_tests = test_instances.rows
+    #     for x in xrange(num_tests):
+    #         neighbors = self.get_nearest_neighbors(test_instances.row(x))
+    #         curr_class = determine_class(neighbors)
+    #         labels.append(curr_class)
 
     def train(self, features, labels):
         # store feature vectors and class labels
@@ -61,11 +80,20 @@ class InstanceBasedLearner(SupervisedLearner):
         print('regression:', self.regression)
 
     def predict(self, features, labels):
-        neighbors = self.get_nearest_neighbors(features)
+        # print('test instance:', features)
+        # neighbors = self.get_nearest_neighbors(features)
+        neighbors = self.get_nearest_neighbors_np(features)
+        # print('neighbors: ', neighbors)
         if self.regression:
-            prediction = avg_mean_regression(neighbors)
+            if self.distance_weighting:
+                pass
+            else:
+                prediction = avg_mean_regression(neighbors)
         else:
-            prediction = determine_class(neighbors)
+            if self.distance_weighting:
+                prediction = determine_class(neighbors, True)
+            else:
+                prediction = determine_class(neighbors, False)
         labels.append(prediction)
 
 
@@ -77,24 +105,46 @@ def calc_distance(num_features, test_instance, train_instance):
         return ttl_distance
 
 def avg_mean_regression(neighbors):
-        return sum(neighbor[0]*-1 for neighbor in neighbors) / len(neighbors)
+        return sum(neighbor[0] for neighbor in neighbors) / len(neighbors)
 
-def determine_class(neighbors):
+def determine_class(neighbors, distance_weighting):
+    if distance_weighting:
+        from operator import itemgetter
+        # vote weighted by distance
+        votes = {}
+        for neighbor in neighbors:
+            try:
+                votes[neighbor[1]] += (1 / neighbor[0])
+            except KeyError:
+                votes[neighbor[1]] = (1 / neighbor[0])
+        sorted_votes = sorted(votes.iteritems(), key=itemgetter(1), reverse=True)
+        return sorted_votes[0][0]
+    else:
         votes = Counter(neighbor[1] for neighbor in neighbors)
         return votes.most_common(1)[0][0]
 
+def normalize(data):
+    data = np.array(data)
+    data_norm = (data - data.min(0)) / data.ptp(0)
+    return data_norm
+
 def main():
     try:
-        execname, train_fn, test_fn, weighting, regression = sys.argv
+        execname, train_fn, test_fn = sys.argv
     except ValueError:
         execname = sys.argv[0]
-        print('usage: {0} train_fn test_fn weighting regression'.format(execname))
+        print('usage: {0} train_fn test_fn'.format(execname))
         sys.exit(-1)
 
+    regression = True
+    weighting = False
     data = Matrix()
     data.load_arff(train_fn)
+    data.normalize()
+    # data.data = normalize(data.data)
     test_data = Matrix(arff=test_fn)
     test_data.normalize()
+    # test_data.data = normalize(test_data.data)
 
     print("Test set name: {}".format(test_fn))
     print("Number of test instances: {}".format(test_data.rows))
@@ -105,18 +155,21 @@ def main():
     test_labels = Matrix(test_data, 0, test_data.cols-1, test_data.rows, 1)
     confusion = Matrix()
 
-    # for k in xrange(1, 16, 2):
-    for k in xrange(1, 2):
-        learner = InstanceBasedLearner(k, bool(weighting), bool(regression))
+    accuracies = []
+    for k in xrange(1, 10, 2):
+        learner = InstanceBasedLearner(k, weighting, regression)
         start_time = time.time()
         learner.train(features, labels)
         elapsed_time = time.time() - start_time
         print("Time to train (in seconds): {}".format(elapsed_time))
 
         test_accuracy = learner.measure_accuracy(test_features, test_labels, confusion)
+        accuracies.append((k, test_accuracy))
         elapsed_time = time.time() - start_time
         print("Test set accuracy: {}".format(test_accuracy))
         print("Time took to predict (in seconds): {}".format(elapsed_time))
+
+    print('\n'.join('{0}: {1}'.format(tup[0], tup[1]) for tup in accuracies))
 
 if __name__ == "__main__":
     main()

@@ -6,3 +6,4 @@ venv/
 test.py
 Lab1/
 Pokemon/
+*.pyc
