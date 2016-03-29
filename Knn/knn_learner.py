@@ -59,17 +59,8 @@ class InstanceBasedLearner(SupervisedLearner):
                     heapq.heappush(distances, curr_tup)
                 else:
                     heapq.heappush(distances, largest_dist)
-            # heapq.heappush(distances, curr_tup)
 
         return distances
-
-    # def knn(self, test_instances, labels):
-    #     # print('knn, test instances:', test_instances)
-    #     num_tests = test_instances.rows
-    #     for x in xrange(num_tests):
-    #         neighbors = self.get_nearest_neighbors(test_instances.row(x))
-    #         curr_class = determine_class(neighbors)
-    #         labels.append(curr_class)
 
     def train(self, features, labels):
         # store feature vectors and class labels
