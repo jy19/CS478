@@ -1,9 +1,6 @@
 from __future__ import print_function
-from toolkitPython.matrix import Matrix
 from toolkitPython.supervised_learner import SupervisedLearner
 
-import time
-import sys
 import heapq
 from collections import Counter
 import numpy as np
@@ -127,52 +124,3 @@ def determine_class(neighbors, distance_weighting):
     else:
         votes = Counter(neighbor[1] for neighbor in neighbors)
         return votes.most_common(1)[0][0]
-
-def normalize(data):
-    data = np.array(data)
-    data_norm = (data - data.min(0)) / data.ptp(0)
-    return data_norm
-
-def main():
-    try:
-        execname, train_fn, test_fn = sys.argv
-    except ValueError:
-        execname = sys.argv[0]
-        print('usage: {0} train_fn test_fn'.format(execname))
-        sys.exit(-1)
-
-    regression = True
-    weighting = True
-    data = Matrix()
-    data.load_arff(train_fn)
-    data.normalize()
-    test_data = Matrix(arff=test_fn)
-    test_data.normalize()
-
-    print("Test set name: {}".format(test_fn))
-    print("Number of test instances: {}".format(test_data.rows))
-    features = Matrix(data, 0, 0, data.rows, data.cols-1)
-    labels = Matrix(data, 0, data.cols-1, data.rows, 1)
-
-    test_features = Matrix(test_data, 0, 0, test_data.rows, test_data.cols-1)
-    test_labels = Matrix(test_data, 0, test_data.cols-1, test_data.rows, 1)
-    confusion = Matrix()
-
-    accuracies = []
-    for k in xrange(1, 16, 2):
-        learner = InstanceBasedLearner(k, weighting, regression)
-        start_time = time.time()
-        learner.train(features, labels)
-        elapsed_time = time.time() - start_time
-        print("Time to train (in seconds): {}".format(elapsed_time))
-
-        test_accuracy = learner.measure_accuracy(test_features, test_labels, confusion)
-        accuracies.append((k, test_accuracy))
-        elapsed_time = time.time() - start_time
-        print("Test set accuracy: {}".format(test_accuracy))
-        print("Time took to predict (in seconds): {}".format(elapsed_time))
-
-    print('\n'.join('{0}: {1}'.format(tup[0], tup[1]) for tup in accuracies))
-
-if __name__ == "__main__":
-    main()
