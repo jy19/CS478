@@ -62,10 +62,17 @@ class InstanceBasedLearner(SupervisedLearner):
 
         return distances
 
+    def reduce_train_set(self, data):
+        data.shuffle()
+        data.data = data.data[:2000]
+        return data
+
     def train(self, features, labels):
         # store feature vectors and class labels
         self.features = features
         self.labels = labels
+        for i in xrange(self.features.rows):
+            self.features.data[i] = [1 if x == self.features.MISSING else x for x in self.features.data[i]]
         print('k:', self.k)
         print('distance weight:', self.distance_weighting)
         print('regression:', self.regression)
@@ -77,7 +84,7 @@ class InstanceBasedLearner(SupervisedLearner):
         # print('neighbors: ', neighbors)
         if self.regression:
             if self.distance_weighting:
-                pass
+                prediction = avg_mean_regression(neighbors, True)
             else:
                 prediction = avg_mean_regression(neighbors)
         else:
@@ -95,8 +102,15 @@ def calc_distance(num_features, test_instance, train_instance):
             ttl_distance += (diff * diff)
         return ttl_distance
 
-def avg_mean_regression(neighbors):
-        return sum(neighbor[0] for neighbor in neighbors) / len(neighbors)
+def avg_mean_regression(neighbors, weighting=False):
+    if weighting:
+        weighted_distances = [(1/neighbor[0]) for neighbor in neighbors]
+        weighted_output = 0
+        for i in xrange(len(neighbors)):
+            weighted_output += (weighted_distances[i] * neighbors[i][1])
+        return weighted_output / sum(weighted_distances)
+    else:
+        return sum(neighbor[1] for neighbor in neighbors) / len(neighbors)
 
 def determine_class(neighbors, distance_weighting):
     if distance_weighting:
@@ -128,14 +142,12 @@ def main():
         sys.exit(-1)
 
     regression = True
-    weighting = False
+    weighting = True
     data = Matrix()
     data.load_arff(train_fn)
     data.normalize()
-    # data.data = normalize(data.data)
     test_data = Matrix(arff=test_fn)
     test_data.normalize()
-    # test_data.data = normalize(test_data.data)
 
     print("Test set name: {}".format(test_fn))
     print("Number of test instances: {}".format(test_data.rows))
@@ -147,7 +159,7 @@ def main():
     confusion = Matrix()
 
     accuracies = []
-    for k in xrange(1, 10, 2):
+    for k in xrange(1, 16, 2):
         learner = InstanceBasedLearner(k, weighting, regression)
         start_time = time.time()
         learner.train(features, labels)
