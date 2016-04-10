@@ -8,9 +8,10 @@ import matplotlib.pyplot as plt
 class PerceptronLearner(SupervisedLearner):
     def __init__(self, max_epochs=5000):
         self.threshold = 0
-        self.lr = 0.1
+        self.lr = 0.01
         self.bias = 0
         self.weights = []
+        self.output_target = None
         self.MAX_EPOCHS = max_epochs
 
     def plot_scatter(self, features, labels):
@@ -43,6 +44,7 @@ class PerceptronLearner(SupervisedLearner):
 
     def run_perceptron(self, feature, label):
         predicted = self.activation_function(feature)
+
         delta_weights = []
         target = label[0]
         if predicted != target:
@@ -74,8 +76,20 @@ class PerceptronLearner(SupervisedLearner):
         delta_weight = (target - predicted) * self.lr * curr_weight
         return delta_weight
 
+    def change_labels(self, labels):
+        num_labels = labels.rows
+        for i in xrange(num_labels):
+            curr_target = labels.row(i)[0]
+            if curr_target == self.output_target:
+                labels.set(i, 0, 1.0)
+            else:
+                labels.set(i, 0, 0.0)
+        return labels
+
     def train(self, features, labels):
         num_labels = labels.rows
+        if self.output_target:
+            labels = self.change_labels(labels)
         # init
         # set all weights to small +/- random numbers
         # train for T iterations or until all outputs correct
@@ -88,18 +102,19 @@ class PerceptronLearner(SupervisedLearner):
 
         not_changed = 0  # keep track of how many loops there are no improvements
         epochs = 0
-        while not_changed < 3 and epochs < self.MAX_EPOCHS:
-            curr_epoch_weights = np.zeros(num_weights + 1)
+        prev_accuracy = 0
+        while not_changed < 5 and epochs < self.MAX_EPOCHS:
             for x in xrange(num_labels):
-                delta_weights = self.run_perceptron(features.row(x), labels.row(x))
-                curr_epoch_weights += delta_weights
+                self.run_perceptron(features.row(x), labels.row(x))
 
-            if curr_epoch_weights.any():  # if there are any changes in weights
+            curr_accuracy = self.measure_accuracy(features, labels)
+            if abs(curr_accuracy - prev_accuracy) > 0.02:  # if there are more than 2% change to accuracy
                 not_changed = 0
             else:
                 not_changed += 1
             epochs += 1
             features.shuffle(labels)  # shuffle the data
+            prev_accuracy = curr_accuracy
         print("weights:", self.weights)
         print("Epochs taken to train:", epochs)
         # self.plot_scatter(features, labels)
