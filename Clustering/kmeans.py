@@ -9,7 +9,7 @@ class KMeans:
     def __init__(self, k, features, random_init, use_label):
         self.k = k
         self.matrix = features
-        self.distances = []
+        self.distances = [[] for x in range(k)]
         self.random_init = random_init
         self.use_label = use_label
 
@@ -23,16 +23,24 @@ class KMeans:
         print 'num cols: ', self.matrix.cols
         clusters = []
         while not self.has_converged(prev_centroids, centroids):
-            print 'iterations:', iterations + 1
-            self.distances = []
+            # print 'iterations:', iterations + 1
+            self.distances = [[] for x in range(self.k)]
             prev_centroids = centroids
             clusters = self.assign_centroids(prev_centroids)
             centroids = self.update_centroids(clusters)
-            sse = sum(self.distances)
-            print 'cluster lengths: ', ' '.join(str(len(x)) for x in clusters)
-            print 'sse:', sse
+            # sse = sum(self.distances)
+            # print 'sse:', sse
             iterations += 1
 
+        print 'cluster lengths: ', ' '.join(str(len(x)) for x in clusters)
+        print 'clusters sse: '
+        print ','.join(str(sum(x)) for x in self.distances)
+        # distances_sq = []
+        # for distances in self.distances:
+        #     distances_sq.append([x**2 for x in distances])
+        # ttl_sse = sum(sum(x) for x in distances_sq)
+        ttl_sse = sum(sum(x) for x in self.distances)
+        print 'total sse: ', ttl_sse
         for i in xrange(len(centroids)):
             centroid_str = ''
             for j in xrange(len(centroids[i])):
@@ -41,7 +49,7 @@ class KMeans:
                 else:
                     centroid_str += self.matrix.attr_value(j, int(centroids[i][j])) + ', '
             print 'centroid {0}: {1}'.format(i, centroid_str)
-        self.plot_silhouette(clusters)
+        # self.plot_silhouette(clusters)
 
     def calc_distance(self, centroid, curr_point):
         num_features = self.matrix.cols
@@ -62,6 +70,7 @@ class KMeans:
                 else:
                     curr_dist = 1
             distance += (curr_dist * curr_dist)
+            # distance += abs(curr_dist)
         return distance
 
     def assign_centroids(self, centroids):
@@ -80,7 +89,7 @@ class KMeans:
                     min_dist = curr_distance
             clusters[cluster_index].append(point)
             # print point[0], ':', cluster_index
-            self.distances.append(min_dist)
+            self.distances[cluster_index].append(min_dist)
             min_dist = sys.maxint
         return clusters
 
@@ -108,7 +117,6 @@ class KMeans:
 
     def has_converged(self, prev_centroids, centroids):
         # stopping criteria: if centroids are not changing
-        # possibly also add a max iterations stopping criteria
         return sorted(prev_centroids) == sorted(centroids)
 
     def random_init_centroid(self):
@@ -206,6 +214,10 @@ def main():
         data.normalize()
     random_init = int(random_init)
     use_label = int(use_label)
+    # for i in xrange(2, 8):
+    #     print 'k: ', i
+    #     kmeans = KMeans(int(i), data, random_init, use_label)
+    #     kmeans.run_kmeans()
     kmeans = KMeans(int(k), data, random_init, use_label)
     kmeans.run_kmeans()
 
