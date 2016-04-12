@@ -1,7 +1,11 @@
 from toolkitPython.supervised_learner import SupervisedLearner
-
-# import numpy as np
+from toolkitPython.matrix import Matrix
 import math
+import copy
+
+
+def find_item(li, item):
+    return [ind for ind in xrange(len(li)) if item in li[ind]][0]
 
 
 class Node:
@@ -9,28 +13,72 @@ class Node:
         self.partition_data = partition_data
         self.output_data = output_data
         self.attributes = input_attrs
-        self.chosen_attr = -1  # attribute to split on
+        self.chosen_attr = -1  # attribute to split on, init to -1 so don't get NoneType errors
         self.children = {}
         self.label = None
 
 
 class DecisionTreeLearner(SupervisedLearner):
     def __init__(self):
-        self.features = None
-        self.labels = None
         self.root_node = None
         self.UNKNOWN = 999.0
         self.MISSING = float("infinity")
+        self.curr_acc = 0
+        self.prune = False
+        self.handle_real = False
+
+    def modify_features_real(self, features):
+        # modify real features so that they can be processed by ID3
+        # import numpy as np
+        col_bins = []
+        for i in xrange(features.cols):
+            col_bin = self.bin_values(features.col(i))
+            col_bins.append(col_bin)
+        # col_bins = np.array(col_bins)
+        for i in xrange(features.rows):
+            # features.data[i] = [np.argwhere(col_bins[j] == features.data[i][j])[0][0] for j in xrange(features.cols-1)]
+            features.data[i] = [find_item(col_bins[j], features.data[i][j]) for j in xrange(features.cols)]
+        # print "modified features", features.data
+        return features
 
     def train(self, features, labels):
+        # print "orig features:", features.data
+        # handle real values
+        if self.handle_real:
+            features = self.modify_features_real(features)
+        # print "features: ", features.data
         # replace missing values
         for i in xrange(features.rows):
-            features.data[i] = [self.UNKNOWN if x == features.MISSING else x for x in features.data[i]]
-        self.features = features
-        self.labels = labels
-        self.root_node = Node(features.data, [label[0] for label in labels.data], features.attr_names)
+            for j in xrange(features.rows):
+                features.data[i] = [self.UNKNOWN if x == features.MISSING else x for x in features.data[i]]
+
+        if self.prune:
+            # divide features further into training and validation for pruning
+            train_percent = 0.8
+            curr_rows = features.rows
+            curr_cols = features.cols
+            training_features = Matrix(features, 0, 0, int(curr_rows * train_percent), curr_cols)
+            training_labels = Matrix(labels, 0, 0, int(curr_rows * train_percent), curr_cols)
+            validation_features = Matrix(features, int(curr_rows * train_percent), 0,
+                                         int(curr_rows * (1 - train_percent)), curr_cols)
+            validation_labels = Matrix(labels, int(curr_rows * train_percent), 0, int(curr_rows * (1 - train_percent)),
+                                       curr_cols)
+            input_data = training_features.data
+            label_data = [label[0] for label in training_labels.data]
+        else:
+            input_data = features.data
+            label_data = [label[0] for label in labels.data]
+
+        # self.root_node = Node(features.data, [label[0] for label in labels.data], features.attr_names)
+        self.root_node = Node(input_data, label_data, features.attr_names)
         self.create_tree()
+        nodes, depth = self.get_tree_info(self.root_node)
+        print "unpruned tree: deepest, nodes: ", depth, nodes
         # self.print_tree(self.root_node)
+
+        if self.prune:
+            self.curr_acc = self.measure_accuracy(validation_features, validation_labels)
+            self.prune_tree(validation_features, validation_labels)
 
     def predict(self, features, labels):
         prediction = self.r_predict(self.root_node, features)
@@ -76,37 +124,6 @@ class DecisionTreeLearner(SupervisedLearner):
 
     def find_most_common(self, data):
         return max(set(data), key=data.count)
-
-    # def calc_entropy(self, data_subset, col_data=None):
-    #     num_rows = len(data_subset)
-    #     value_counts = {}
-    #     entropy = 0
-    #     for i in xrange(num_rows):
-    #         try:
-    #             value_counts[data_subset[i]] += 1
-    #         except KeyError:
-    #             value_counts[data_subset[i]] = 1
-    #     for count in value_counts.values():
-    #         x = float(count) / num_rows
-    #         entropy += -x * math.log(x, 2)
-    #
-    #     return entropy
-
-    # def calc_info_gain(self, data, output_data):
-    #     num_rows = len(data)
-    #     value_counts = {}
-    #     partition_entropy = 0
-    #     for i in xrange(num_rows):
-    #         try:
-    #             value_counts[data[i]] += 1
-    #         except KeyError:
-    #             value_counts[data[i]] = 1
-    #     for k in value_counts.keys():
-    #         val_prob = float(value_counts[k]) / sum(value_counts.values())
-    #         subset = [entry for entry in data if entry == k]
-    #         partition_entropy += val_prob * self.calc_entropy(subset)
-    #
-    #     return partition_entropy
 
     def create_tree(self):
         self.r_create_tree(self.root_node, 0)
@@ -161,14 +178,6 @@ class DecisionTreeLearner(SupervisedLearner):
             curr_node.children[k] = child_node
             self.r_create_tree(child_node, curr_depth + 1)
 
-            # calculate info gain of attributes in data set
-            # split data set into subsets by max info gain, create node for each partition
-            # for each partition:
-            # if 1 class or if stop criteria: end
-            # elif class > 1, and attributes: recurse back to calc info gain of all remaining attributes
-            # else when no attri: end and label with most common class of parent
-            # if empty: label with most common class of
-
     def get_col_outputs(self, column):
         # get pos outputs of a column, and where they occur
         col_outputs = {}
@@ -196,17 +205,63 @@ class DecisionTreeLearner(SupervisedLearner):
             entropy += -x * math.log(x, 2)
         return entropy
 
-    def prune_tree(self):
+    def prune_tree(self, validation_features, validation_labels):
         # reduce error pruning (for fully trained trees)
         # for each non leaf node, test accuracy on validation set for
         # modified tree where subtree of this node is removed and node is assigned majority class
         # keep pruned tree that does best on validation set and at least as well as original tree
         # repeat until no pruned tree does as well as original tree
-        pass
+        self.r_prune_tree(self.root_node, validation_features, validation_labels)
+        nodes, depth = self.get_tree_info(self.root_node)
+        print "Pruned tree, depth, nodes:", depth, nodes
 
-    def bin_values(self):
-        # experiment to handle real value input
-        pass
+    def r_prune_tree(self, curr_node, validation_features, validation_labels):
+        if curr_node != self.root_node:  # don't prune the root node..
+            if curr_node.chosen_attr != -1:  # not split on any attributes, is non-leaf node
+                backup = copy.deepcopy(curr_node)
+                # remove subtree and assign majority class
+                curr_node.chosen_attr = -1
+                curr_node.label = self.find_most_common(curr_node.output_data)
+                curr_node.children = {}
+
+                pruned_acc = self.measure_accuracy(validation_features, validation_labels)
+                if pruned_acc < self.curr_acc:  # validation is not better, put subtree back
+                    curr_node = backup
+
+        # try pruning all children nodes
+        for k, v in curr_node.children.iteritems():
+            curr_node.children[k] = self.r_prune_tree(v, validation_features, validation_labels)
+
+        return curr_node
+
+    def get_tree_info(self, curr_node, depth=1, nodes=1):
+        if curr_node.label:  # curr node is leaf node
+            return nodes, depth
+
+        depths = [depth]
+        for k, v in curr_node.children.iteritems():
+            nodes, curr_depth = self.get_tree_info(v, depth + 1, nodes + 1)
+            depths.append(curr_depth)
+
+        return nodes, max(depths)
+
+    def bin_values(self, data, bins=3):
+        # experiment to handle real value inut
+        # assumes data normalized
+        data = sorted(data)
+        k, m = len(data) / bins, len(data) % bins
+        return [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in xrange(bins)]
 
     def print_tree(self, node):
-        pass
+        self.print_node(node, 0)
+
+    def print_node(self, node, depth):
+        if node.chosen_attr != -1:
+            print "--" * depth, "Splits, On attribute: ", node.attributes[node.chosen_attr]
+        else:
+            print "--" * depth, "Stop split, label: ", node.label
+
+        if node.children:
+            print "--" * depth, "children: "
+            for child in node.children.values():
+                self.print_node(child, depth + 1)
