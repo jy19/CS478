@@ -245,8 +245,8 @@ class DecisionTreeLearner(SupervisedLearner):
 
         return nodes, max(depths)
 
-    def bin_values(self, data, bins=3):
-        # experiment to handle real value inut
+    def bin_values(self, data, bins=5):
+        # experiment to handle real value input
         # assumes data normalized
         data = sorted(data)
         k, m = len(data) / bins, len(data) % bins
@@ -262,6 +262,6 @@ class DecisionTreeLearner(SupervisedLearner):
             print "--" * depth, "Stop split, label: ", node.label
 
         if node.children:
-            print "--" * depth, "children: "
+            print "--" * depth, "Children nodes: "
             for child in node.children.values():
                 self.print_node(child, depth + 1)
