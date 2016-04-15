@@ -31,10 +31,13 @@ class Layer:
 
     def layer_predict(self):
         # predict the outputs given input
-        data = self.input_data + [self.bias]
-        # print data, self.weights.T
-        non_adjusted_out = np.dot(data, self.weights.T)
+        data = np.atleast_2d(np.append(self.input_data, self.bias))
+        print "data", data
+        print "self weights:", self.weights
+        # non_adjusted_out = np.dot(data, self.weights.T)
+        non_adjusted_out = data.dot(self.weights.T)
         predicted_output = sigmoid_func(non_adjusted_out)
+        print "predicted output", predicted_output
         self.output_data = predicted_output
 
     def calc_error(self, output_errors=None, output_weights=None):
@@ -80,8 +83,8 @@ class NeuralNetLearner(SupervisedLearner):
                                    num_cols)
 
         # initialize random weights with mean 0, plus bias weight
-        weights = 2 * np.random.random((len(training_features.data) + 1, 1)) - 1
-        hidden_weights = 2 * np.random.random((self.hidden_nodes + 1, len(training_features.data)+1)) - 1
+        weights = 2 * np.random.random((1, self.hidden_nodes + 1)) - 1
+        hidden_weights = 2 * np.random.random((self.hidden_nodes, training_features.cols + 1)) - 1
 
         self.output_layer = Layer(weights)
         self.hidden_layers.append(Layer(hidden_weights, True))
